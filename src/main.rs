@@ -1,5 +1,5 @@
 use bson_functions::string_to_document;
-use queries::{execute_create, execute_find, execute_insert, execute_peek};
+use queries::{execute_create, execute_find, execute_insert, execute_peek, prepare_create, prepare_find, prepare_peek};
 use rustyline::{error::ReadlineError, history::FileHistory, DefaultEditor, Editor};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -10,8 +10,8 @@ use std::{
 
 use bson::{from_reader, Document};
 
-mod queries;
 mod bson_functions;
+mod queries;
 
 const TABLE_MAX_DOCUMENTS: usize = 100;
 #[derive(Serialize, Deserialize)]
@@ -189,54 +189,13 @@ fn prepare_statement(
 
     match statement_input {
         "insert" => {
-            if input_parsed.len() < 2 {
-                return PrepareResult::PrepareCollectionDoesntExist;
-            }
-
-            let collection_name = input_parsed[1];
-            match get_collection(statement, database, collection_name) {
-                CollectionResult::CollectionDoesntExist => {
-                    return PrepareResult::PrepareCollectionDoesntExist
-                }
-                CollectionResult::CollectionSuccess => {}
-            }
-
-            if input_parsed.len() < 3 {
-                return PrepareResult::PrepareSyntaxError;
-            }
-
-            statement.x_type = Some(StatementType::StatementInsert);
-
-            let document = string_to_document(input_parsed[2]).unwrap();
-
-            statement.row_to_insert = Some(Doc { document: document });
-            return PrepareResult::PrepareSuccess;
+            return prepare_peek(input_parsed, statement, database);
         }
         "find" => {
-            if input_parsed.len() < 2 {
-                return PrepareResult::PrepareCollectionDoesntExist;
-            }
-
-            let collection_name = input_parsed[1];
-            match get_collection(statement, database, collection_name) {
-                CollectionResult::CollectionDoesntExist => {
-                    return PrepareResult::PrepareCollectionDoesntExist
-                }
-                CollectionResult::CollectionSuccess => {}
-            }
-
-            statement.x_type = Some(StatementType::StatementFind);
-            return PrepareResult::PrepareSuccess;
+            return prepare_find(input_parsed, statement, database);
         }
         "create" => {
-            if input_parsed.len() < 2 {
-                return PrepareResult::PrepareCollectionDoesntExist;
-            }
-
-            let collection_name = input_parsed[1];
-            statement.x_type = Some(StatementType::StatementCreate);
-            statement.collection_name = collection_name.to_owned();
-            return PrepareResult::PrepareSuccess;
+            return prepare_create(input_parsed, statement);
         }
         "peek" => {
             statement.x_type = Some(StatementType::StatementPeek);

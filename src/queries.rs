@@ -1,4 +1,36 @@
-use crate::{Collection, Database, Doc, ExecuteResult, Statement, TABLE_MAX_DOCUMENTS};
+use crate::{
+    bson_functions::string_to_document, get_collection, Collection, CollectionResult, Database,
+    Doc, ExecuteResult, PrepareResult, Statement, StatementType, TABLE_MAX_DOCUMENTS,
+};
+
+pub fn prepare_peek(
+    input_parsed: Vec<&str>,
+    statement: &mut Statement,
+    database: &mut Database,
+) -> PrepareResult {
+    if input_parsed.len() < 2 {
+        return PrepareResult::PrepareCollectionDoesntExist;
+    }
+
+    let collection_name = input_parsed[1];
+    match get_collection(statement, database, collection_name) {
+        CollectionResult::CollectionDoesntExist => {
+            return PrepareResult::PrepareCollectionDoesntExist
+        }
+        CollectionResult::CollectionSuccess => {}
+    }
+
+    if input_parsed.len() < 3 {
+        return PrepareResult::PrepareSyntaxError;
+    }
+
+    statement.x_type = Some(StatementType::StatementInsert);
+
+    let document = string_to_document(input_parsed[2]).unwrap();
+
+    statement.row_to_insert = Some(Doc { document: document });
+    return PrepareResult::PrepareSuccess;
+}
 
 pub fn execute_peek(database: &mut Database) -> ExecuteResult {
     let mut collections: Vec<&str> = Vec::new();
@@ -10,6 +42,17 @@ pub fn execute_peek(database: &mut Database) -> ExecuteResult {
     println!("{:?}", collections);
 
     return ExecuteResult::ExecuteSuccess;
+}
+
+pub fn prepare_create(input_parsed: Vec<&str>, statement: &mut Statement) -> PrepareResult {
+    if input_parsed.len() < 2 {
+        return PrepareResult::PrepareCollectionDoesntExist;
+    }
+
+    let collection_name = input_parsed[1];
+    statement.x_type = Some(StatementType::StatementCreate);
+    statement.collection_name = collection_name.to_owned();
+    return PrepareResult::PrepareSuccess;
 }
 
 pub fn execute_create(statement: Statement, database: &mut Database) -> ExecuteResult {
@@ -53,6 +96,27 @@ pub fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteR
         }
         None => return ExecuteResult::ExecuteTableUndefined,
     }
+}
+
+pub fn prepare_find(
+    input_parsed: Vec<&str>,
+    statement: &mut Statement,
+    database: &mut Database,
+) -> PrepareResult {
+    if input_parsed.len() < 2 {
+        return PrepareResult::PrepareCollectionDoesntExist;
+    }
+
+    let collection_name = input_parsed[1];
+    match get_collection(statement, database, collection_name) {
+        CollectionResult::CollectionDoesntExist => {
+            return PrepareResult::PrepareCollectionDoesntExist
+        }
+        CollectionResult::CollectionSuccess => {}
+    }
+
+    statement.x_type = Some(StatementType::StatementFind);
+    return PrepareResult::PrepareSuccess;
 }
 
 pub fn execute_find(statement: Statement, database: &mut Database) -> ExecuteResult {
