@@ -1,67 +1,90 @@
+use rustyline::{error::ReadlineError, history::FileHistory, DefaultEditor, Editor};
+use serde::{Deserialize, Serialize};
 use std::{
-    fmt::{self},
-    io::{self, Write},
+    borrow::BorrowMut,
+    fmt,
+    fs::File,
+    io::{self, Read, Write},
 };
 
-const ID_SIZE: usize = 4;
-const USERNAME_SIZE: usize = 32;
-const EMAIL_SIZE: usize = 255;
-const ID_OFFSET: usize = 0;
-const USERNAME_OFFSET: usize = ID_OFFSET + ID_SIZE;
-const EMAIL_OFFSET: usize = USERNAME_OFFSET + USERNAME_SIZE;
-const ROW_SIZE: usize = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+use serde_json::Value;
 
-const PAGE_SIZE: usize = 4096;
-const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
-const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * 100;
+use bson::{from_reader, Document};
 
-struct Table {
-    num_rows: usize,
-    pages: [Option<Row>; 100],
+const TABLE_MAX_DOCUMENTS: usize = 100;
+#[derive(Serialize, Deserialize)]
+struct Database {
+    tables: Option<Vec<Collection>>,
 }
-#[derive(Clone, Debug)]
-struct Row {
-    id: i32,
-    username: String,
-    email: String,
+#[derive(Serialize, Deserialize)]
+struct Collection {
+    name: String,
+    num_documents: usize,
+    pages: Vec<Row>,
 }
 
-impl fmt::Display for Row {
+impl fmt::Display for Collection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {}, {})", self.id, self.username, self.email)
+        writeln!(f, "Collection Name: {}", self.name)?;
+        writeln!(f, "Number of Documents: {}", self.num_documents)?;
+        writeln!(f, "Documents:")?;
+        for (i, row) in self.pages.iter().enumerate() {
+            writeln!(f, "Row {}: {:?}", i + 1, row)?;
+        }
+        Ok(())
     }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Row {
+    document: Document,
 }
 
 enum ExecuteResult {
     ExecuteSuccess,
     ExecuteTableFull,
     ExecuteFailed,
+    ExecuteTableUndefined,
+    ExecuteCollectionAlreadyExists,
 }
 
 enum PrepareResult {
     PrepareSuccess,
     PrepareUnrecognizedStatement,
     PrepareSyntaxError,
+    PrepareCollectionDoesntExist,
+    PrepareMissingCollection,
+}
+
+enum CollectionResult {
+    CollectionSuccess,
+    CollectionDoesntExist,
 }
 
 enum StatementType {
     StatementFind,
     StatementInsert,
+    StatementCreate,
 }
 
 struct Statement {
     x_type: Option<StatementType>,
     row_to_insert: Option<Row>,
+    collection: String,
+    collection_name: String,
 }
 
 fn main() {
     println!("Hello, world!");
-    let mut table: Table = new_table();
+
+    let filename = "./test.db";
+    let mut database: Database = db_open(filename);
+    let mut rl = DefaultEditor::new().unwrap();
     loop {
         let mut input_buffer = String::new();
         print_prompt();
-        let exit = get_input(&mut input_buffer, &mut table);
+        let exit = get_input(&mut rl, &mut input_buffer, &mut database);
         if exit {
+            db_close(&mut database, filename);
             return;
         }
         input_buffer.clear();
@@ -73,10 +96,15 @@ fn print_prompt() {
     io::stdout().flush().expect("Failed to flush stdout");
 }
 
-fn get_input(mut input_buffer: &mut String, table: &mut Table) -> bool {
-    match io::stdin().read_line(&mut input_buffer) {
-        Ok(_) => {
-            let str = input_buffer.trim();
+fn get_input(
+    rl: &mut Editor<(), FileHistory>,
+    input_buffer: &mut String,
+    database: &mut Database,
+) -> bool {
+    let readline = rl.readline("db> ");
+    match readline {
+        Ok(line) => {
+            let str = line.trim();
 
             if let Some(command) = str.chars().nth(0) {
                 if command == '.' {
@@ -85,27 +113,44 @@ fn get_input(mut input_buffer: &mut String, table: &mut Table) -> bool {
                     let mut statement = Statement {
                         x_type: None,
                         row_to_insert: None,
+                        collection: String::new(),
+                        collection_name: String::new(),
                     };
 
-                    let prepare = prepare_statement(str, &mut statement);
+                    let prepare = prepare_statement(str, &mut statement, database);
                     match prepare {
                         PrepareResult::PrepareSuccess => {
-                            match execute_statement(statement, table) {
+                            match execute_statement(statement, database) {
                                 ExecuteResult::ExecuteSuccess => println!("Executed."),
                                 ExecuteResult::ExecuteFailed => println!("Failed."),
                                 ExecuteResult::ExecuteTableFull => println!("Table full."),
+                                ExecuteResult::ExecuteTableUndefined => {
+                                    println!("Collection doesnt exist.")
+                                }
+                                ExecuteResult::ExecuteCollectionAlreadyExists => {
+                                    eprintln!("Collection already exists.")
+                                }
                             }
                         }
                         PrepareResult::PrepareUnrecognizedStatement => {
-                            eprintln!("Unrecognized keyword at start of '{}'", str)
+                            eprintln!("Unrecognized keyword at start of '{}'", str);
                         }
                         PrepareResult::PrepareSyntaxError => {
-                            eprintln!("Syntax error. Could not parse statement")
+                            eprintln!("Syntax error. Could not parse statement");
+                        }
+                        PrepareResult::PrepareCollectionDoesntExist => {
+                            eprintln!("Collection doesnt exist")
+                        }
+                        PrepareResult::PrepareMissingCollection => {
+                            eprintln!("Collection is missing in query.")
                         }
                     }
                     return false;
                 }
             }
+        }
+        Err(ReadlineError::Interrupted) => {
+            return true;
         }
         Err(error) => {
             eprintln!("Error reading input: {}", error);
@@ -130,25 +175,54 @@ fn handle_command(command: &str) -> bool {
     return false;
 }
 
-fn prepare_statement(input: &str, statement: &mut Statement) -> PrepareResult {
+fn prepare_statement(
+    input: &str,
+    statement: &mut Statement,
+    database: &mut Database,
+) -> PrepareResult {
     let input_parsed: Vec<&str> = input.split(' ').collect();
+
+    if input_parsed.len() < 2 {
+        return PrepareResult::PrepareCollectionDoesntExist;
+    }
+
     let statement_input = input_parsed[0];
+    let collection_name = input_parsed[1];
+
     match statement_input {
         "insert" => {
-            if input_parsed.len() < 4 {
+            match get_collection(statement, database, collection_name) {
+                CollectionResult::CollectionDoesntExist => {
+                    return PrepareResult::PrepareCollectionDoesntExist
+                }
+                CollectionResult::CollectionSuccess => {}
+            }
+
+            if input_parsed.len() < 3 {
                 return PrepareResult::PrepareSyntaxError;
             }
 
             statement.x_type = Some(StatementType::StatementInsert);
-            statement.row_to_insert = Some(Row {
-                id: input_parsed[1].parse::<i32>().unwrap(), //TODO fix this unwrap
-                username: input_parsed[2].to_string(),
-                email: input_parsed[3].to_string(),
-            });
+
+            let document = string_to_document(input_parsed[2]).unwrap();
+
+            statement.row_to_insert = Some(Row { document: document });
             return PrepareResult::PrepareSuccess;
         }
         "find" => {
+            match get_collection(statement, database, collection_name) {
+                CollectionResult::CollectionDoesntExist => {
+                    return PrepareResult::PrepareCollectionDoesntExist
+                }
+                CollectionResult::CollectionSuccess => {}
+            }
+
             statement.x_type = Some(StatementType::StatementFind);
+            return PrepareResult::PrepareSuccess;
+        }
+        "create" => {
+            statement.x_type = Some(StatementType::StatementCreate);
+            statement.collection_name = collection_name.to_owned();
             return PrepareResult::PrepareSuccess;
         }
         _ => {
@@ -157,14 +231,43 @@ fn prepare_statement(input: &str, statement: &mut Statement) -> PrepareResult {
     }
 }
 
-fn execute_statement(statement: Statement, table: &mut Table) -> ExecuteResult {
+fn get_collection(
+    statement: &mut Statement,
+    database: &mut Database,
+    collection_name: &str,
+) -> CollectionResult {
+    let tables = database.tables.as_ref().unwrap();
+    for item in tables.iter() {
+        if item.name.eq(collection_name) {
+            statement.collection = collection_name.to_owned();
+            return CollectionResult::CollectionSuccess;
+        }
+    }
+
+    return CollectionResult::CollectionDoesntExist;
+}
+
+fn string_to_document(string: &str) -> Result<Document, String> {
+    match serde_json::from_str::<Value>(&string) {
+        Ok(json_value) => {
+            let bson_doc = bson::to_document(&json_value).expect("Failed");
+            return Ok(bson_doc);
+        }
+        Err(_e) => return Err("Error parsing string".to_string()),
+    }
+}
+
+fn execute_statement(statement: Statement, database: &mut Database) -> ExecuteResult {
     match &statement.x_type {
         Some(_type) => match _type {
             StatementType::StatementFind => {
-                return execute_find(statement, table);
+                return execute_find(statement, database);
             }
             StatementType::StatementInsert => {
-                return execute_insert(statement, table);
+                return execute_insert(statement, database);
+            }
+            StatementType::StatementCreate => {
+                return execute_create(statement, database);
             }
         },
         None => {
@@ -173,38 +276,116 @@ fn execute_statement(statement: Statement, table: &mut Table) -> ExecuteResult {
     }
 }
 
-fn execute_insert(statement: Statement, table: &mut Table) -> ExecuteResult {
-    if table.num_rows >= TABLE_MAX_ROWS {
-        return ExecuteResult::ExecuteTableFull;
-    }
-
-    let row_to_insert: Row = statement.row_to_insert.unwrap();
-
-    for (_index, row_option) in table.pages.iter_mut().enumerate() {
-        if row_option.is_none() {
-            *row_option = Some(row_to_insert);
-            table.num_rows += 1;
-            return ExecuteResult::ExecuteSuccess;
+fn execute_create(statement: Statement, database: &mut Database) -> ExecuteResult {
+    for item in database.tables.as_mut().unwrap().iter_mut() {
+        if item.name.eq(&statement.collection) {
+            return ExecuteResult::ExecuteCollectionAlreadyExists;
         }
     }
 
-    return ExecuteResult::ExecuteFailed;
+    let collection = Collection {
+        name: statement.collection_name,
+        num_documents: 0,
+        pages: Vec::new(),
+    };
+
+    database.tables.as_mut().unwrap().push(collection);
+
+    return ExecuteResult::ExecuteSuccess;
 }
 
-fn execute_find(_statement: Statement, table: &mut Table) -> ExecuteResult {
-    for i in 0..table.num_rows {
-        println!("{}", table.pages.get(i).unwrap().clone().unwrap());
+fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteResult {
+    let mut table: Option<&mut Collection> = None; //TODO move a collection reference inside statement
+
+    for item in database.tables.as_mut().unwrap().iter_mut() {
+        if item.name.eq(&statement.collection) {
+            table = Some(item);
+        }
+    }
+
+    match table {
+        Some(collection) => {
+            if collection.num_documents >= TABLE_MAX_DOCUMENTS {
+                return ExecuteResult::ExecuteTableFull;
+            }
+
+            let row_to_insert: Row = statement.row_to_insert.unwrap();
+
+            collection.pages.push(row_to_insert);
+
+            return ExecuteResult::ExecuteSuccess;
+        }
+        None => return ExecuteResult::ExecuteTableUndefined,
+    }
+}
+
+fn execute_find(statement: Statement, database: &mut Database) -> ExecuteResult {
+    let mut table: Option<&Collection> = None; //TODO move a collection reference inside statement
+
+    for item in database.tables.as_mut().unwrap().iter_mut() {
+        if item.name.eq(&statement.collection) {
+            table = Some(item);
+        }
+    }
+
+    match table {
+        Some(collection) => {
+            println!("{}", collection);
+        }
+        None => return ExecuteResult::ExecuteTableUndefined,
     }
 
     return ExecuteResult::ExecuteSuccess;
 }
 
-fn new_table() -> Table {
-    const ARRAY_REPEAT_VALUE: Option<Row> = None;
-    let table = Table {
-        num_rows: 0,
-        pages: [ARRAY_REPEAT_VALUE; 100],
-    };
+fn db_open(filename: &str) -> Database {
+    //const ARRAY_REPEAT_VALUE: Option<Row> = None;
+    match database_opener(filename) {
+        Ok(db) => return db,
+        Err(e) => {
+            eprintln!("{}", e);
+            return Database {
+                tables: Some(Vec::new()),
+            };
+        }
+    }
+}
 
-    return table;
+fn db_close(database: &mut Database, filename: &str) {
+    let document = bson::to_document(database).expect("Failed to serialize Database");
+
+    let mut serialized_data: Vec<u8> = Vec::new();
+    document
+        .to_writer(&mut serialized_data)
+        .expect("Failed to serialize BSON");
+
+    match File::create(filename) {
+        Ok(mut file) => {
+            file.write_all(&serialized_data)
+                .expect("Error writing to file");
+            return;
+        }
+        Err(_e) => {
+            println!("Error creating file");
+            return;
+        }
+    }
+}
+
+fn database_opener(filename: &str) -> Result<Database, String> {
+    match File::open(filename) {
+        Ok(mut file) => {
+            let mut buffer = Vec::new();
+            match file.read_to_end(&mut buffer) {
+                Ok(_usize) => {
+                    let document = from_reader(&buffer[..]).expect("Failed to deserialize BSON");
+
+                    return Ok(bson::from_bson::<Database>(document)
+                        .expect("Failed to convert BSON to Database"));
+                }
+                Err(_e) => return Err("Error reading file".to_string()),
+            }
+        }
+        Err(_e) => return Err("Error opening file".to_string()),
+    }
 }
