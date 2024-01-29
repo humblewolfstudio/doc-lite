@@ -1,4 +1,3 @@
-use bson_functions::string_to_document;
 use queries::{execute_create, execute_find, execute_insert, execute_peek, prepare_create, prepare_find, prepare_peek};
 use rustyline::{error::ReadlineError, history::FileHistory, DefaultEditor, Editor};
 use serde::{Deserialize, Serialize};
@@ -85,7 +84,7 @@ fn main() {
     loop {
         let mut input_buffer = String::new();
         print_prompt();
-        let exit = get_input(&mut rl, &mut input_buffer, &mut database);
+        let exit = get_input(&mut rl, &mut database);
         if exit {
             db_close(&mut database, filename);
             return;
@@ -101,7 +100,6 @@ fn print_prompt() {
 
 fn get_input(
     rl: &mut Editor<(), FileHistory>,
-    input_buffer: &mut String,
     database: &mut Database,
 ) -> bool {
     let readline = rl.readline("db> ");
