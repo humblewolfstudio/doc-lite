@@ -64,6 +64,7 @@ enum StatementType {
     StatementFind,
     StatementInsert,
     StatementCreate,
+    StatementPeek,
 }
 
 struct Statement {
@@ -182,15 +183,15 @@ fn prepare_statement(
 ) -> PrepareResult {
     let input_parsed: Vec<&str> = input.split(' ').collect();
 
-    if input_parsed.len() < 2 {
-        return PrepareResult::PrepareCollectionDoesntExist;
-    }
-
     let statement_input = input_parsed[0];
-    let collection_name = input_parsed[1];
 
     match statement_input {
         "insert" => {
+            if input_parsed.len() < 2 {
+                return PrepareResult::PrepareCollectionDoesntExist;
+            }
+
+            let collection_name = input_parsed[1];
             match get_collection(statement, database, collection_name) {
                 CollectionResult::CollectionDoesntExist => {
                     return PrepareResult::PrepareCollectionDoesntExist
@@ -210,6 +211,11 @@ fn prepare_statement(
             return PrepareResult::PrepareSuccess;
         }
         "find" => {
+            if input_parsed.len() < 2 {
+                return PrepareResult::PrepareCollectionDoesntExist;
+            }
+
+            let collection_name = input_parsed[1];
             match get_collection(statement, database, collection_name) {
                 CollectionResult::CollectionDoesntExist => {
                     return PrepareResult::PrepareCollectionDoesntExist
@@ -221,8 +227,17 @@ fn prepare_statement(
             return PrepareResult::PrepareSuccess;
         }
         "create" => {
+            if input_parsed.len() < 2 {
+                return PrepareResult::PrepareCollectionDoesntExist;
+            }
+
+            let collection_name = input_parsed[1];
             statement.x_type = Some(StatementType::StatementCreate);
             statement.collection_name = collection_name.to_owned();
+            return PrepareResult::PrepareSuccess;
+        }
+        "peek" => {
+            statement.x_type = Some(StatementType::StatementPeek);
             return PrepareResult::PrepareSuccess;
         }
         _ => {
@@ -269,11 +284,26 @@ fn execute_statement(statement: Statement, database: &mut Database) -> ExecuteRe
             StatementType::StatementCreate => {
                 return execute_create(statement, database);
             }
+            StatementType::StatementPeek => {
+                return execute_peek(database);
+            }
         },
         None => {
             return ExecuteResult::ExecuteFailed;
         }
     }
+}
+
+fn execute_peek(database: &mut Database) -> ExecuteResult {
+    let mut collections: Vec<&str> = Vec::new();
+
+    for item in database.tables.as_ref().unwrap().iter() {
+        collections.push(&item.name);
+    }
+
+    println!("{:?}", collections);
+
+    return ExecuteResult::ExecuteSuccess;
 }
 
 fn execute_create(statement: Statement, database: &mut Database) -> ExecuteResult {
@@ -312,7 +342,7 @@ fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteResul
             let row_to_insert: Row = statement.row_to_insert.unwrap();
 
             collection.pages.push(row_to_insert);
-
+            collection.num_documents += 1;
             return ExecuteResult::ExecuteSuccess;
         }
         None => return ExecuteResult::ExecuteTableUndefined,
