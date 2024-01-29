@@ -1,15 +1,17 @@
+use bson_functions::string_to_document;
+use queries::{execute_create, execute_find, execute_insert, execute_peek};
 use rustyline::{error::ReadlineError, history::FileHistory, DefaultEditor, Editor};
 use serde::{Deserialize, Serialize};
 use std::{
-    borrow::BorrowMut,
     fmt,
     fs::File,
     io::{self, Read, Write},
 };
 
-use serde_json::Value;
-
 use bson::{from_reader, Document};
+
+mod queries;
+mod bson_functions;
 
 const TABLE_MAX_DOCUMENTS: usize = 100;
 #[derive(Serialize, Deserialize)]
@@ -20,7 +22,7 @@ struct Database {
 struct Collection {
     name: String,
     num_documents: usize,
-    pages: Vec<Row>,
+    pages: Vec<Doc>,
 }
 
 impl fmt::Display for Collection {
@@ -35,7 +37,7 @@ impl fmt::Display for Collection {
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Row {
+struct Doc {
     document: Document,
 }
 
@@ -69,7 +71,7 @@ enum StatementType {
 
 struct Statement {
     x_type: Option<StatementType>,
-    row_to_insert: Option<Row>,
+    row_to_insert: Option<Doc>,
     collection: String,
     collection_name: String,
 }
@@ -207,7 +209,7 @@ fn prepare_statement(
 
             let document = string_to_document(input_parsed[2]).unwrap();
 
-            statement.row_to_insert = Some(Row { document: document });
+            statement.row_to_insert = Some(Doc { document: document });
             return PrepareResult::PrepareSuccess;
         }
         "find" => {
@@ -262,16 +264,6 @@ fn get_collection(
     return CollectionResult::CollectionDoesntExist;
 }
 
-fn string_to_document(string: &str) -> Result<Document, String> {
-    match serde_json::from_str::<Value>(&string) {
-        Ok(json_value) => {
-            let bson_doc = bson::to_document(&json_value).expect("Failed");
-            return Ok(bson_doc);
-        }
-        Err(_e) => return Err("Error parsing string".to_string()),
-    }
-}
-
 fn execute_statement(statement: Statement, database: &mut Database) -> ExecuteResult {
     match &statement.x_type {
         Some(_type) => match _type {
@@ -292,80 +284,6 @@ fn execute_statement(statement: Statement, database: &mut Database) -> ExecuteRe
             return ExecuteResult::ExecuteFailed;
         }
     }
-}
-
-fn execute_peek(database: &mut Database) -> ExecuteResult {
-    let mut collections: Vec<&str> = Vec::new();
-
-    for item in database.tables.as_ref().unwrap().iter() {
-        collections.push(&item.name);
-    }
-
-    println!("{:?}", collections);
-
-    return ExecuteResult::ExecuteSuccess;
-}
-
-fn execute_create(statement: Statement, database: &mut Database) -> ExecuteResult {
-    for item in database.tables.as_mut().unwrap().iter_mut() {
-        if item.name.eq(&statement.collection) {
-            return ExecuteResult::ExecuteCollectionAlreadyExists;
-        }
-    }
-
-    let collection = Collection {
-        name: statement.collection_name,
-        num_documents: 0,
-        pages: Vec::new(),
-    };
-
-    database.tables.as_mut().unwrap().push(collection);
-
-    return ExecuteResult::ExecuteSuccess;
-}
-
-fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteResult {
-    let mut table: Option<&mut Collection> = None; //TODO move a collection reference inside statement
-
-    for item in database.tables.as_mut().unwrap().iter_mut() {
-        if item.name.eq(&statement.collection) {
-            table = Some(item);
-        }
-    }
-
-    match table {
-        Some(collection) => {
-            if collection.num_documents >= TABLE_MAX_DOCUMENTS {
-                return ExecuteResult::ExecuteTableFull;
-            }
-
-            let row_to_insert: Row = statement.row_to_insert.unwrap();
-
-            collection.pages.push(row_to_insert);
-            collection.num_documents += 1;
-            return ExecuteResult::ExecuteSuccess;
-        }
-        None => return ExecuteResult::ExecuteTableUndefined,
-    }
-}
-
-fn execute_find(statement: Statement, database: &mut Database) -> ExecuteResult {
-    let mut table: Option<&Collection> = None; //TODO move a collection reference inside statement
-
-    for item in database.tables.as_mut().unwrap().iter_mut() {
-        if item.name.eq(&statement.collection) {
-            table = Some(item);
-        }
-    }
-
-    match table {
-        Some(collection) => {
-            println!("{}", collection);
-        }
-        None => return ExecuteResult::ExecuteTableUndefined,
-    }
-
-    return ExecuteResult::ExecuteSuccess;
 }
 
 fn db_open(filename: &str) -> Database {
