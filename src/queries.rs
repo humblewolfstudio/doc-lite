@@ -9,7 +9,7 @@ pub fn prepare_insert(
     database: &mut Database,
 ) -> PrepareResult {
     if input_parsed.len() < 2 {
-        return PrepareResult::PrepareCollectionDoesntExist;
+        return PrepareResult::PrepareMissingCollection;
     }
 
     let collection_name = input_parsed[1];
@@ -48,7 +48,7 @@ pub fn execute_peek(database: &mut Database) -> ExecuteResult {
 
 pub fn prepare_create(input_parsed: Vec<&str>, statement: &mut Statement) -> PrepareResult {
     if input_parsed.len() < 2 {
-        return PrepareResult::PrepareCollectionDoesntExist;
+        return PrepareResult::PrepareMissingCollection;
     }
 
     let collection_name = input_parsed[1];
@@ -106,7 +106,7 @@ pub fn prepare_find(
     database: &mut Database,
 ) -> PrepareResult {
     if input_parsed.len() < 2 {
-        return PrepareResult::PrepareCollectionDoesntExist;
+        return PrepareResult::PrepareMissingCollection;
     }
 
     let collection_name = input_parsed[1];
