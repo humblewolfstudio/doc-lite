@@ -60,6 +60,7 @@ enum PrepareResult {
     PrepareSyntaxError,
     PrepareCollectionDoesntExist,
     PrepareMissingCollection,
+    PrepareCantParseJson,
 }
 
 enum CollectionResult {
@@ -159,6 +160,9 @@ fn get_input(rl: &mut Editor<(), FileHistory>, database: &mut Database) -> bool 
                         }
                         PrepareResult::PrepareMissingCollection => {
                             eprintln!("Collection is missing in query.")
+                        }
+                        PrepareResult::PrepareCantParseJson => {
+                            eprintln!("The JSON cant be parsed");
                         }
                     }
                     return false;

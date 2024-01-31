@@ -28,10 +28,17 @@ pub fn prepare_insert(
 
     let json_input = input_parsed[2..].join("");
 
-    let document = string_to_document(&json_input).unwrap();
+    match string_to_document(&json_input) {
+        Ok(document) => {
+            statement.row_to_insert = Some(Doc { document: document });
+            return PrepareResult::PrepareSuccess;
+        },
+        Err(_err) => {
+            return PrepareResult::PrepareCantParseJson;
+        }
+    }
 
-    statement.row_to_insert = Some(Doc { document: document });
-    return PrepareResult::PrepareSuccess;
+    
 }
 
 pub fn execute_peek(database: &mut Database) -> ExecuteResult {
