@@ -1,8 +1,11 @@
-use queries::{execute_create, execute_find, execute_insert, execute_peek, prepare_create, prepare_find, prepare_peek};
+use queries::{
+    execute_create, execute_find, execute_insert, execute_peek, prepare_create, prepare_find,
+    prepare_insert,
+};
 use rustyline::{error::ReadlineError, history::FileHistory, DefaultEditor, Editor};
 use serde::{Deserialize, Serialize};
 use std::{
-    fmt,
+    env, fmt,
     fs::File,
     io::{self, Read, Write},
 };
@@ -13,6 +16,7 @@ mod bson_functions;
 mod queries;
 
 const TABLE_MAX_DOCUMENTS: usize = 100;
+
 #[derive(Serialize, Deserialize)]
 struct Database {
     tables: Option<Vec<Collection>>,
@@ -76,9 +80,14 @@ struct Statement {
 }
 
 fn main() {
-    println!("Hello, world!");
+    let args: Vec<String> = env::args().collect();
+    let filename;
+    if args.len() > 1 {
+        filename = args[1].as_str();
+    } else {
+        filename = "./db.docl";
+    }
 
-    let filename = "./test.db";
     let mut database: Database = db_open(filename);
     let mut rl = DefaultEditor::new().unwrap();
     loop {
@@ -98,10 +107,7 @@ fn print_prompt() {
     io::stdout().flush().expect("Failed to flush stdout");
 }
 
-fn get_input(
-    rl: &mut Editor<(), FileHistory>,
-    database: &mut Database,
-) -> bool {
+fn get_input(rl: &mut Editor<(), FileHistory>, database: &mut Database) -> bool {
     let readline = rl.readline("db> ");
     match readline {
         Ok(line) => {
@@ -187,7 +193,7 @@ fn prepare_statement(
 
     match statement_input {
         "insert" => {
-            return prepare_peek(input_parsed, statement, database);
+            return prepare_insert(input_parsed, statement, database);
         }
         "find" => {
             return prepare_find(input_parsed, statement, database);
@@ -288,9 +294,9 @@ fn database_opener(filename: &str) -> Result<Database, String> {
                     return Ok(bson::from_bson::<Database>(document)
                         .expect("Failed to convert BSON to Database"));
                 }
-                Err(_e) => return Err("Error reading file".to_string()),
+                Err(_e) => return Err("Error reading database file".to_string()),
             }
         }
-        Err(_e) => return Err("Error opening file".to_string()),
+        Err(_e) => return Err("Database file doesnt exist".to_string()),
     }
 }

@@ -3,7 +3,7 @@ use crate::{
     Doc, ExecuteResult, PrepareResult, Statement, StatementType, TABLE_MAX_DOCUMENTS,
 };
 
-pub fn prepare_peek(
+pub fn prepare_insert(
     input_parsed: Vec<&str>,
     statement: &mut Statement,
     database: &mut Database,
@@ -26,7 +26,9 @@ pub fn prepare_peek(
 
     statement.x_type = Some(StatementType::StatementInsert);
 
-    let document = string_to_document(input_parsed[2]).unwrap();
+    let json_input = input_parsed[2..].join("");
+
+    let document = string_to_document(&json_input).unwrap();
 
     statement.row_to_insert = Some(Doc { document: document });
     return PrepareResult::PrepareSuccess;
