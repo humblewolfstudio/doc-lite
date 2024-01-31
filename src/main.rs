@@ -95,7 +95,6 @@ fn main() {
     let mut database: Database = db_open(filename);
     let mut rl = DefaultEditor::new().unwrap();
     loop {
-        let mut input_buffer = String::new();
         print_prompt();
         let exit = get_input(&mut rl, &mut database);
         if exit {
@@ -105,7 +104,6 @@ fn main() {
             }
             return;
         }
-        input_buffer.clear();
     }
 }
 
