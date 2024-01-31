@@ -19,6 +19,7 @@ const TABLE_MAX_DOCUMENTS: usize = 100;
 
 #[derive(Serialize, Deserialize)]
 struct Database {
+    filename: String,
     tables: Option<Vec<Collection>>,
 }
 #[derive(Serialize, Deserialize)]
@@ -50,6 +51,7 @@ enum ExecuteResult {
     ExecuteFailed,
     ExecuteTableUndefined,
     ExecuteCollectionAlreadyExists,
+    ExecuteCantSaveDatabase,
 }
 
 enum PrepareResult {
@@ -70,6 +72,7 @@ enum StatementType {
     StatementInsert,
     StatementCreate,
     StatementPeek,
+    StatementCommit,
 }
 
 struct Statement {
@@ -95,7 +98,10 @@ fn main() {
         print_prompt();
         let exit = get_input(&mut rl, &mut database);
         if exit {
-            db_close(&mut database, filename);
+            match commit_changes(&mut database) {
+                Ok(ok) => println!("{}", ok),
+                Err(err) => println!("{}", err),
+            }
             return;
         }
         input_buffer.clear();
@@ -136,6 +142,9 @@ fn get_input(rl: &mut Editor<(), FileHistory>, database: &mut Database) -> bool 
                                 }
                                 ExecuteResult::ExecuteCollectionAlreadyExists => {
                                     eprintln!("Collection already exists.")
+                                }
+                                ExecuteResult::ExecuteCantSaveDatabase => {
+                                    println!("Cant commit changes to database")
                                 }
                             }
                         }
@@ -205,6 +214,10 @@ fn prepare_statement(
             statement.x_type = Some(StatementType::StatementPeek);
             return PrepareResult::PrepareSuccess;
         }
+        "commit" => {
+            statement.x_type = Some(StatementType::StatementCommit);
+            return PrepareResult::PrepareSuccess;
+        }
         _ => {
             return PrepareResult::PrepareUnrecognizedStatement;
         }
@@ -242,6 +255,16 @@ fn execute_statement(statement: Statement, database: &mut Database) -> ExecuteRe
             StatementType::StatementPeek => {
                 return execute_peek(database);
             }
+            StatementType::StatementCommit => match commit_changes(database) {
+                Ok(ok) => {
+                    println!("{}", ok);
+                    return ExecuteResult::ExecuteSuccess;
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    return ExecuteResult::ExecuteCantSaveDatabase;
+                }
+            },
         },
         None => {
             return ExecuteResult::ExecuteFailed;
@@ -256,29 +279,29 @@ fn db_open(filename: &str) -> Database {
         Err(e) => {
             eprintln!("{}", e);
             return Database {
+                filename: filename.to_string(),
                 tables: Some(Vec::new()),
             };
         }
     }
 }
 
-fn db_close(database: &mut Database, filename: &str) {
+fn commit_changes(database: &mut Database) -> Result<String, String> {
     let document = bson::to_document(database).expect("Failed to serialize Database");
 
     let mut serialized_data: Vec<u8> = Vec::new();
-    document
-        .to_writer(&mut serialized_data)
-        .expect("Failed to serialize BSON");
+    match document.to_writer(&mut serialized_data) {
+        Ok(_ok) => {}
+        Err(_err) => return Err("Failed to serialize BSON".to_string()),
+    }
 
-    match File::create(filename) {
-        Ok(mut file) => {
-            file.write_all(&serialized_data)
-                .expect("Error writing to file");
-            return;
-        }
+    match File::create(&database.filename) {
+        Ok(mut file) => match file.write_all(&serialized_data) {
+            Ok(_ok) => return Ok("Database saved.".to_string()),
+            Err(_err) => return Err("Couldnt save database".to_string()),
+        },
         Err(_e) => {
-            println!("Error creating file");
-            return;
+            return Err("Error creating file".to_string());
         }
     }
 }
