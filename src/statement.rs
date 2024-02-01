@@ -76,10 +76,10 @@ impl Statement {
         self.collection_name = collection_name;
     }
 
-    pub fn get_row_to_insert(&self) -> Result<Document, String> {
+    pub fn get_row_to_insert(&self) -> Document {
         match &self.row_to_insert {
-            Some(doc) => return Ok(doc.to_owned()),
-            None => return Err("Doesnt have a row".to_string()),
+            Some(doc) => return doc.to_owned(),
+            None => return Document::new(),
         }
     }
 

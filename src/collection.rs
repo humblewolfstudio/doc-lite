@@ -52,4 +52,44 @@ impl Collection {
     pub fn get_collection(&self) -> &Vec<Document> {
         return &self.documents;
     }
+
+    pub fn simple_search(&self, query: Document) -> Vec<Document> {
+        let mut sorted: Vec<Document> = Vec::new();
+        for doc in self.documents.iter() {
+            let mut has_keys = true;
+            for (key, value) in query.iter() {
+                if !doc.contains_key(key) {
+                    has_keys = false;
+                    break;
+                }
+                if doc.get(key).ne(&Some(value)) {
+                    has_keys = false;
+                    break;
+                }
+            }
+            if has_keys {
+                sorted.push(doc.clone());
+            }
+        }
+
+        return sorted;
+    }
+
+    pub fn get_sorted_collection(&self, query: Document) -> Vec<Document> {
+        let mut sorted: Vec<Document> = Vec::new();
+        for doc in self.documents.iter() {
+            let mut has_keys = true;
+            for key in query.keys() {
+                if !doc.contains_key(key) {
+                    has_keys = false;
+                    break;
+                }
+            }
+            if has_keys {
+                sorted.push(doc.clone());
+            }
+        }
+
+        return sorted;
+    }
 }

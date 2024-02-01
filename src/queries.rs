@@ -99,15 +99,7 @@ pub fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteR
                 return ExecuteResult::ExecuteTableFull;
             }
 
-            let row_to_insert: Document;
-
-            match statement.get_row_to_insert() {
-                Ok(doc) => row_to_insert = doc,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    return ExecuteResult::ExecuteFailed;
-                }
-            }
+            let row_to_insert: Document = statement.get_row_to_insert();
 
             collection.add_to_collection(row_to_insert);
             return ExecuteResult::ExecuteSuccess;
@@ -132,9 +124,17 @@ pub fn prepare_find(
         }
         CollectionResult::CollectionSuccess => {}
     }
-
+    let json_input = input_parsed[2..].join("");
     statement.set_type(StatementType::StatementFind);
-    return PrepareResult::PrepareSuccess;
+    match string_to_document(&json_input) {
+        Ok(document) => {
+            statement.set_row_to_insert(Document::from(document));
+            return PrepareResult::PrepareSuccess;
+        }
+        Err(_err) => {
+            return PrepareResult::PrepareCantParseJson;
+        }
+    }
 }
 
 pub fn execute_find(statement: Statement, database: &mut Database) -> ExecuteResult {
@@ -152,7 +152,10 @@ pub fn execute_find(statement: Statement, database: &mut Database) -> ExecuteRes
 
     match table {
         Some(collection) => {
-            println!("{}", collection);
+            let documents = collection.simple_search(statement.get_row_to_insert());
+            for i in documents.iter() {
+                println!("{}", i);
+            }
         }
         None => return ExecuteResult::ExecuteTableUndefined,
     }
