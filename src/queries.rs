@@ -1,6 +1,7 @@
 use crate::{
-    bson_functions::string_to_document, get_collection, Collection, CollectionResult, Database,
-    Doc, ExecuteResult, PrepareResult, Statement, StatementType, TABLE_MAX_DOCUMENTS,
+    bson_functions::string_to_document, collection::Collection, document::Doc, get_collection,
+    statement::StatementType, CollectionResult, Database, ExecuteResult, PrepareResult, Statement,
+    TABLE_MAX_DOCUMENTS,
 };
 
 pub fn prepare_insert(
@@ -24,28 +25,27 @@ pub fn prepare_insert(
         return PrepareResult::PrepareSyntaxError;
     }
 
-    statement.x_type = Some(StatementType::StatementInsert);
+    statement.set_type(StatementType::StatementInsert);
 
     let json_input = input_parsed[2..].join("");
 
     match string_to_document(&json_input) {
         Ok(document) => {
-            statement.row_to_insert = Some(Doc { document: document });
+            statement.set_row_to_insert(Doc::new(document));
             return PrepareResult::PrepareSuccess;
-        },
+        }
         Err(_err) => {
             return PrepareResult::PrepareCantParseJson;
         }
     }
-
-    
 }
 
 pub fn execute_peek(database: &mut Database) -> ExecuteResult {
-    let mut collections: Vec<&str> = Vec::new();
-
-    for item in database.tables.as_ref().unwrap().iter() {
-        collections.push(&item.name);
+    let mut collections: Vec<String> = Vec::new();
+    let mut name;
+    for item in database.get_collections().iter() {
+        name = item.get_name();
+        collections.push(name);
     }
 
     println!("{:?}", collections);
@@ -59,48 +59,55 @@ pub fn prepare_create(input_parsed: Vec<&str>, statement: &mut Statement) -> Pre
     }
 
     let collection_name = input_parsed[1];
-    statement.x_type = Some(StatementType::StatementCreate);
-    statement.collection_name = collection_name.to_owned();
+    statement.set_type(StatementType::StatementCreate);
+    statement.set_collection_name(collection_name.to_owned());
     return PrepareResult::PrepareSuccess;
 }
 
 pub fn execute_create(statement: Statement, database: &mut Database) -> ExecuteResult {
-    for item in database.tables.as_mut().unwrap().iter_mut() {
-        if item.name.eq(&statement.collection) {
+    for item in database.get_collections().iter() {
+        if item.get_name().eq(&statement.get_collection()) {
             return ExecuteResult::ExecuteCollectionAlreadyExists;
         }
     }
 
-    let collection = Collection {
-        name: statement.collection_name,
-        num_documents: 0,
-        pages: Vec::new(),
-    };
+    let collection = Collection::new(statement.get_collection_name());
 
-    database.tables.as_mut().unwrap().push(collection);
+    database.add_collection(collection);
 
     return ExecuteResult::ExecuteSuccess;
 }
 
 pub fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteResult {
-    let mut table: Option<&mut Collection> = None; //TODO move a collection reference inside statement
+    let mut table = None; //TODO move a collection reference inside statement
 
-    for item in database.tables.as_mut().unwrap().iter_mut() {
-        if item.name.eq(&statement.collection) {
-            table = Some(item);
+    let mut collections: Vec<Collection> = database.get_collections();
+
+    for i in 0..collections.len() {
+        let item = &collections[i];
+        if item.get_name().eq(&statement.get_collection()) {
+            table = Some(&mut collections[i]);
+            break; // Exit loop once the desired item is found
         }
     }
 
     match table {
         Some(collection) => {
-            if collection.num_documents >= TABLE_MAX_DOCUMENTS {
+            if collection.get_num_docuents() >= TABLE_MAX_DOCUMENTS {
                 return ExecuteResult::ExecuteTableFull;
             }
 
-            let row_to_insert: Doc = statement.row_to_insert.unwrap();
+            let row_to_insert: Doc;
 
-            collection.pages.push(row_to_insert);
-            collection.num_documents += 1;
+            match statement.get_row_to_insert() {
+                Ok(doc) => row_to_insert = doc,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    return ExecuteResult::ExecuteFailed;
+                }
+            }
+
+            collection.add_to_collection(row_to_insert);
             return ExecuteResult::ExecuteSuccess;
         }
         None => return ExecuteResult::ExecuteTableUndefined,
@@ -124,16 +131,20 @@ pub fn prepare_find(
         CollectionResult::CollectionSuccess => {}
     }
 
-    statement.x_type = Some(StatementType::StatementFind);
+    statement.set_type(StatementType::StatementFind);
     return PrepareResult::PrepareSuccess;
 }
 
 pub fn execute_find(statement: Statement, database: &mut Database) -> ExecuteResult {
     let mut table: Option<&Collection> = None; //TODO move a collection reference inside statement
 
-    for item in database.tables.as_mut().unwrap().iter_mut() {
-        if item.name.eq(&statement.collection) {
-            table = Some(item);
+    let mut collections: Vec<Collection> = database.get_collections();
+
+    for i in 0..collections.len() {
+        let item = &collections[i];
+        if item.get_name().eq(&statement.get_collection()) {
+            table = Some(&mut collections[i]);
+            break;
         }
     }
 
