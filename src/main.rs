@@ -14,7 +14,6 @@ mod queries;
 mod statement;
 mod database;
 mod collection;
-mod document;
 
 const TABLE_MAX_DOCUMENTS: usize = 100;
 

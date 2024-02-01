@@ -16,8 +16,8 @@ impl Database {
         return self.filename.to_owned();
     }
 
-    pub fn get_collections(&self) -> Vec<Collection> {
-        return self.collections.clone();
+    pub fn get_collections(&mut self) -> &mut Vec<Collection> {
+        return self.collections.as_mut();
     }
 
     pub fn add_collection(&mut self, table: Collection) {

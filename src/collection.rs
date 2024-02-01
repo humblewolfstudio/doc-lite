@@ -1,14 +1,13 @@
 use std::fmt;
 
+use bson::Document;
 use serde::Deserialize;
-
-use crate::document::Doc;
 
 #[derive(serde::Serialize, Deserialize, Clone)]
 pub struct Collection {
     name: String,
     num_documents: usize,
-    documents: Vec<Doc>,
+    documents: Vec<Document>,
 }
 
 pub enum CollectionResult {
@@ -45,12 +44,12 @@ impl Collection {
         return self.num_documents;
     }
 
-    pub fn add_to_collection(&mut self, doc: Doc) {
+    pub fn add_to_collection(&mut self, doc: Document) {
         self.documents.push(doc);
         self.num_documents += 1;
     }
     #[allow(dead_code)]
-    pub fn get_collection(&self) -> &Vec<Doc> {
+    pub fn get_collection(&self) -> &Vec<Document> {
         return &self.documents;
     }
 }

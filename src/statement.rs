@@ -1,5 +1,7 @@
+use bson::Document;
+
 use crate::{
-    commit_changes, document::Doc, queries::{
+    commit_changes, queries::{
         execute_create, execute_find, execute_insert, execute_peek, prepare_create, prepare_find,
         prepare_insert,
     }, Database
@@ -35,7 +37,7 @@ pub enum PrepareResult {
 
 pub struct Statement {
     x_type: StatementType,
-    row_to_insert: Option<Doc>,
+    row_to_insert: Option<Document>,
     collection: String,
     collection_name: String,
 }
@@ -74,14 +76,14 @@ impl Statement {
         self.collection_name = collection_name;
     }
 
-    pub fn get_row_to_insert(&self) -> Result<Doc, String> {
+    pub fn get_row_to_insert(&self) -> Result<Document, String> {
         match &self.row_to_insert {
             Some(doc) => return Ok(doc.to_owned()),
             None => return Err("Doesnt have a row".to_string()),
         }
     }
 
-    pub fn set_row_to_insert(&mut self, row: Doc) {
+    pub fn set_row_to_insert(&mut self, row: Document) {
         self.row_to_insert = Some(row);
     }
 }

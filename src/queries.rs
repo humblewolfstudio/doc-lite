@@ -1,5 +1,7 @@
+use bson::Document;
+
 use crate::{
-    bson_functions::string_to_document, collection::Collection, document::Doc, get_collection,
+    bson_functions::string_to_document, collection::Collection, get_collection,
     statement::StatementType, CollectionResult, Database, ExecuteResult, PrepareResult, Statement,
     TABLE_MAX_DOCUMENTS,
 };
@@ -31,7 +33,7 @@ pub fn prepare_insert(
 
     match string_to_document(&json_input) {
         Ok(document) => {
-            statement.set_row_to_insert(Doc::new(document));
+            statement.set_row_to_insert(Document::from(document));
             return PrepareResult::PrepareSuccess;
         }
         Err(_err) => {
@@ -79,9 +81,9 @@ pub fn execute_create(statement: Statement, database: &mut Database) -> ExecuteR
 }
 
 pub fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteResult {
-    let mut table = None; //TODO move a collection reference inside statement
+    let mut table: Option<&mut Collection> = None; //TODO move a collection reference inside statement
 
-    let mut collections: Vec<Collection> = database.get_collections();
+    let collections: &mut Vec<Collection> = database.get_collections();
 
     for i in 0..collections.len() {
         let item = &collections[i];
@@ -97,7 +99,7 @@ pub fn execute_insert(statement: Statement, database: &mut Database) -> ExecuteR
                 return ExecuteResult::ExecuteTableFull;
             }
 
-            let row_to_insert: Doc;
+            let row_to_insert: Document;
 
             match statement.get_row_to_insert() {
                 Ok(doc) => row_to_insert = doc,
@@ -138,7 +140,7 @@ pub fn prepare_find(
 pub fn execute_find(statement: Statement, database: &mut Database) -> ExecuteResult {
     let mut table: Option<&Collection> = None; //TODO move a collection reference inside statement
 
-    let mut collections: Vec<Collection> = database.get_collections();
+    let collections: &mut Vec<Collection> = database.get_collections();
 
     for i in 0..collections.len() {
         let item = &collections[i];
