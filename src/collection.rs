@@ -49,8 +49,8 @@ impl Collection {
         self.documents.push(doc);
         self.num_documents += 1;
     }
-
-    pub fn get_documents(&self) -> &Vec<Doc> {
+    #[allow(dead_code)]
+    pub fn get_collection(&self) -> &Vec<Doc> {
         return &self.documents;
     }
 }
