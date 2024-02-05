@@ -21,7 +21,7 @@ windows_installation() {
 }
 
 INSTALL_DIR="/usr/local/bin/doclite"
-EXECUTABLE="https://github.com/humblewolfstudio/doc-lite/releases/download/v0.1/doclite"
+EXECUTABLE="https://github.com/humblewolfstudio/doc-lite/releases/download/v0.2/doclite"
 
 os_name=$(uname)
 
