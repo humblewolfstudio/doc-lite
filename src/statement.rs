@@ -2,8 +2,7 @@ use bson::Document;
 
 use crate::{
     commit_changes, queries::{
-        execute_create, execute_find, execute_insert, execute_peek, prepare_create, prepare_find,
-        prepare_insert,
+        execute_create, execute_delete, execute_find, execute_insert, execute_peek, prepare_create, prepare_delete, prepare_find, prepare_insert
     }, Database
 };
 
@@ -15,6 +14,7 @@ pub enum StatementType {
     StatementCreate,
     StatementPeek,
     StatementCommit,
+    StatementDelete,
 }
 
 pub enum ExecuteResult {
@@ -112,6 +112,9 @@ pub fn execute_statement(statement: Statement, database: &mut Database) -> Execu
                 return ExecuteResult::ExecuteCantSaveDatabase;
             }
         },
+        StatementType::StatementDelete => {
+            return execute_delete(statement, database);
+        },
         StatementType::StatementUninitialized => {
             eprintln!("No statement ready for execution");
             return ExecuteResult::ExecuteFailed;
@@ -145,6 +148,9 @@ pub fn prepare_statement(
         "commit" => {
             statement.set_type(StatementType::StatementCommit);
             return PrepareResult::PrepareSuccess;
+        }
+        "delete" => {
+            return prepare_delete(input_parsed, statement, database);
         }
         _ => {
             return PrepareResult::PrepareUnrecognizedStatement;

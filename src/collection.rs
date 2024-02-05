@@ -75,6 +75,19 @@ impl Collection {
         return sorted;
     }
 
+    pub fn simple_delete(&mut self, query: Document) {
+        self.documents.retain(|doc| {
+            let mut has_keys = true;
+            for (key, value) in query.iter() {
+                if !doc.contains_key(key) || doc.get(key) != Some(value) {
+                    has_keys = false;
+                    break;
+                }
+            }
+            !has_keys
+        });
+    }
+
     pub fn get_sorted_collection(&self, query: Document) -> Vec<Document> {
         let mut sorted: Vec<Document> = Vec::new();
         for doc in self.documents.iter() {

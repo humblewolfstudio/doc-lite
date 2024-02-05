@@ -36,4 +36,5 @@ doclite [path to file]
 - peek -> Returns the tables in that database
 - insert [table name] [json] -> Inserts the json to the table specified
 - find [table name] [json] -> Searchs for the specified keys/values in the table
+- delete [table name] [json] -> Searchs and deletes the specified keys/values in the table
 - commit -> Saves all the changes to disk

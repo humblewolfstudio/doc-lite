@@ -162,3 +162,55 @@ pub fn execute_find(statement: Statement, database: &mut Database) -> ExecuteRes
 
     return ExecuteResult::ExecuteSuccess;
 }
+
+pub fn prepare_delete(
+    input_parsed: Vec<&str>,
+    statement: &mut Statement,
+    database: &mut Database,
+) -> PrepareResult {
+    if input_parsed.len() < 2 {
+        return PrepareResult::PrepareMissingCollection;
+    }
+
+    let collection_name = input_parsed[1];
+    match get_collection(statement, database, collection_name) {
+        CollectionResult::CollectionDoesntExist => {
+            return PrepareResult::PrepareCollectionDoesntExist
+        }
+        CollectionResult::CollectionSuccess => {}
+    }
+    let json_input = input_parsed[2..].join("");
+    statement.set_type(StatementType::StatementDelete);
+    match string_to_document(&json_input) {
+        Ok(document) => {
+            statement.set_row_to_insert(Document::from(document));
+            return PrepareResult::PrepareSuccess;
+        }
+        Err(_err) => {
+            return PrepareResult::PrepareCantParseJson;
+        }
+    }
+}
+
+pub fn execute_delete(statement: Statement, database: &mut Database) -> ExecuteResult {
+    let mut table: Option<&mut Collection> = None; //TODO move a collection reference inside statement
+
+    let collections: &mut Vec<Collection> = database.get_collections();
+
+    for i in 0..collections.len() {
+        let item = &collections[i];
+        if item.get_name().eq(&statement.get_collection()) {
+            table = Some(&mut collections[i]);
+            break;
+        }
+    }
+
+    match table {
+        Some(collection) => {
+            collection.simple_delete(statement.get_row_to_insert());
+            println!("Deleted.");
+        }
+        None => return ExecuteResult::ExecuteTableUndefined,
+    }
+    return ExecuteResult::ExecuteSuccess;
+}
