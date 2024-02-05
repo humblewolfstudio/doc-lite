@@ -15,7 +15,7 @@ mod statement;
 mod database;
 mod collection;
 
-const TABLE_MAX_DOCUMENTS: usize = 100;
+const TABLE_MAX_DOCUMENTS: usize = 10000;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
